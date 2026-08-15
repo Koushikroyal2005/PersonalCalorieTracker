@@ -229,6 +229,10 @@ class ChatActionExecutorService:
                     EntryCreate.model_validate(entry)
             elif step.get("tool") == "update_goal":
                 GoalUpdate.model_validate(step.get("goal_update", {}))
+            elif step.get("tool") == "create_goal":
+                GoalCreate.model_validate(
+                    {**step.get("goal_update", {}), "is_active": True}
+                )
 
         results: list[dict[str, Any]] = []
         summaries: list[str] = []
@@ -291,6 +295,31 @@ class ChatActionExecutorService:
                 result, _ = await self.confirm_goal(user_id, step)
                 results.append({"tool": tool, **result})
                 summaries.append("updated the active goal")
+
+            elif tool == "create_goal":
+                result, _ = await self.create_goal(user_id, step)
+                results.append({"tool": tool, **result})
+                summaries.append("created and activated a new goal")
+
+            elif tool == "activate_previous_goal":
+                goal_id = step.get("goal_id")
+                activated_goal = (
+                    await goal_service.activate(user_id, goal_id, True)
+                    if goal_id
+                    else None
+                )
+                results.append(
+                    {
+                        "tool": tool,
+                        "goal": activated_goal,
+                        "goal_id": goal_id,
+                    }
+                )
+                summaries.append(
+                    "activated the previous goal"
+                    if activated_goal
+                    else "found no previous goal to activate"
+                )
 
             else:
                 raise UnsupportedChatActionError

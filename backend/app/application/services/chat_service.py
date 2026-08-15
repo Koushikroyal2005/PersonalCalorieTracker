@@ -57,6 +57,16 @@ class ChatService:
         proposed_goal_update: dict[str, Any] = {}
         descriptions: list[str] = []
 
+        create_goal_updates: dict[str, Any] = {}
+        has_create_goal = any(
+            call.get("tool") == "create_goal" for call in tool_calls
+        )
+        if has_create_goal:
+            for call in tool_calls:
+                if call.get("tool") in {"create_goal", "update_goal"}:
+                    create_goal_updates.update(call.get("goal_update") or {})
+        create_goal_prepared = False
+
         for call in tool_calls:
             tool = call.get("tool")
 
@@ -168,7 +178,7 @@ class ChatService:
                 else:
                     descriptions.append(f"skip {selector} goal (not found)")
 
-            elif tool == "update_goal":
+            elif tool == "update_goal" and not has_create_goal:
                 goal_update = call.get("goal_update") or {}
                 if goal_update:
                     prepared_steps.append(
@@ -176,6 +186,62 @@ class ChatService:
                     )
                     proposed_goal_update.update(goal_update)
                     descriptions.append("update the active goal")
+
+            elif tool == "create_goal" and not create_goal_prepared:
+                active_goal = await goal_service.get_active(user_id)
+                goal_update = {
+                    "goal_type": "maintain",
+                    "daily_calorie_target": 2000,
+                    "daily_protein_target_g": 120,
+                    "daily_carbs_target_g": 220,
+                    "daily_fat_target_g": 65,
+                }
+                if active_goal:
+                    goal_update.update(
+                        {
+                            "goal_type": active_goal["goal_type"],
+                            "daily_calorie_target": active_goal[
+                                "daily_calorie_target"
+                            ],
+                            "daily_protein_target_g": active_goal[
+                                "daily_protein_target_g"
+                            ],
+                            "daily_carbs_target_g": active_goal[
+                                "daily_carbs_target_g"
+                            ],
+                            "daily_fat_target_g": active_goal[
+                                "daily_fat_target_g"
+                            ],
+                            "target_weight_kg": active_goal.get(
+                                "target_weight_kg"
+                            ),
+                        }
+                    )
+                goal_update.update(create_goal_updates)
+                prepared_steps.append(
+                    {"tool": "create_goal", "goal_update": goal_update}
+                )
+                proposed_goal_update.update(goal_update)
+                descriptions.append("create and activate a new goal")
+                create_goal_prepared = True
+
+            elif tool == "activate_previous_goal":
+                goals = await goal_service.list(user_id, page=1, limit=100)
+                previous_goal = next(
+                    (goal for goal in goals["items"] if not goal["is_active"]),
+                    None,
+                )
+                prepared_steps.append(
+                    {
+                        "tool": "activate_previous_goal",
+                        "goal_id": previous_goal["id"] if previous_goal else None,
+                    }
+                )
+                descriptions.append(
+                    "activate the previous goal"
+                    if previous_goal
+                    else "skip previous goal (not found)"
+                )
 
         proposal = {
             "entries": proposed_entries,

@@ -90,9 +90,12 @@ previous, or latest. Deletion always needs confirmation.
 Use whenever the current message requests two or more app mutations, such as
 deleting a mistaken meal and then logging replacements. Put every mutation in
 tool_call_sequence in the exact order requested. Each item must have one tool:
-delete_entries, log_meal, delete_goal, or update_goal. Include only fields used
-by that tool. The application executes one tool call at a time after one user
-confirmation. Never merge, skip, reorder, or silently replace a requested step.
+delete_entries, log_meal, delete_goal, update_goal, create_goal, or
+activate_previous_goal. Include only fields used by that tool. If the user asks
+to set a new goal, use one create_goal call and put all stated goal targets in
+that call; do not also emit update_goal or a second create_goal. The application
+executes one tool call at a time after one user confirmation. Never skip,
+reorder, or silently replace a requested step.
 
 Example for "delete biryani, then add pizza for lunch and Maggi for dinner":
 {
@@ -211,6 +214,9 @@ class ChatAIService:
     ) -> ChatDecision:
         text = message.lower().replace(",", " ")
         action = decision.action
+
+        if action == "action_sequence":
+            return decision
 
         new_goal_phrases = (
             "new goal",

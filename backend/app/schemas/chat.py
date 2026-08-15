@@ -202,6 +202,8 @@ class ProposedToolCall(BaseModel):
         "log_meal",
         "delete_goal",
         "update_goal",
+        "create_goal",
+        "activate_previous_goal",
     ]
     entries: list[ProposedMealEntry] = Field(default_factory=list)
     entry_filters: list[ProposedEntryFilter] = Field(default_factory=list)
