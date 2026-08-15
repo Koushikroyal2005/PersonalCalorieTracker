@@ -1,3 +1,4 @@
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from app.application.services.chat_action_service import (
@@ -9,8 +10,10 @@ from app.application.services.chat_history_service import (
 from app.application.services.entry_service import entry_service
 from app.application.services.goal_service import goal_service
 from app.schemas.chat import ChatMessageType, ChatRole
-from app.schemas.entry import EntryCreate
+from app.schemas.entry import EntryCreate, MealType
 from app.schemas.goal import GoalCreate, GoalUpdate
+
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 
 class ChatActionNotFoundError(Exception):
@@ -236,6 +239,7 @@ class ChatActionExecutorService:
 
         results: list[dict[str, Any]] = []
         summaries: list[str] = []
+        detail_sections: list[str] = []
 
         for step in steps:
             tool = step.get("tool")
@@ -321,13 +325,98 @@ class ChatActionExecutorService:
                     else "found no previous goal to activate"
                 )
 
+            elif tool == "list_entries":
+                result, details = await self.list_entries(user_id, step)
+                results.append({"tool": tool, **result})
+                summaries.append("checked the requested food log")
+                detail_sections.append(details)
+
             else:
                 raise UnsupportedChatActionError
 
         sequence_summary = ", then ".join(summaries)
+        message = f"Done! I {sequence_summary}."
+        if detail_sections:
+            message += "\n\n" + "\n\n".join(detail_sections)
         return (
             {"steps": results},
-            f"Done! I {sequence_summary}.",
+            message,
+        )
+
+    async def list_entries(
+        self,
+        user_id: str,
+        step: dict[str, Any],
+    ) -> tuple[dict[str, Any], str]:
+        today = datetime.now(INDIA_TIMEZONE).date()
+        start_date = step.get("start_date")
+        end_date = step.get("end_date")
+        normalized_start = (
+            date.fromisoformat(start_date)
+            if isinstance(start_date, str)
+            else start_date
+        ) or today
+        normalized_end = (
+            date.fromisoformat(end_date)
+            if isinstance(end_date, str)
+            else end_date
+        ) or normalized_start
+        start = datetime.combine(
+            normalized_start,
+            time.min,
+            INDIA_TIMEZONE,
+        ).astimezone(timezone.utc)
+        end = datetime.combine(
+            normalized_end,
+            time.max,
+            INDIA_TIMEZONE,
+        ).astimezone(timezone.utc)
+        meal_type = step.get("meal_type")
+        result = await entry_service.list(
+            user_id=user_id,
+            page=1,
+            limit=100,
+            start_date=start,
+            end_date=end,
+            meal_type=MealType(meal_type) if meal_type else None,
+            search=None,
+        )
+
+        if not result["items"]:
+            details = (
+                f"No food entries were found between {normalized_start} "
+                f"and {normalized_end}."
+            )
+        else:
+            lines: list[str] = []
+            for item in result["items"]:
+                micronutrients = item.get("micronutrients") or {}
+                micro_text = ", ".join(
+                    f"{name.replace('_', ' ')} {value:g}"
+                    for name, value in micronutrients.items()
+                ) or "none recorded"
+                lines.append(
+                    f'- {item["food_name"]}: {item["quantity_value"]:g} '
+                    f'{item["quantity_unit"]}, {item["calories"]} kcal; '
+                    f'protein {item["protein_g"]:g} g, '
+                    f'carbs {item["carbs_g"]:g} g, '
+                    f'fat {item["fat_g"]:g} g; '
+                    f"micronutrients: {micro_text}"
+                )
+            details = (
+                f"Food details for {normalized_start} to {normalized_end}:\n"
+                + "\n".join(lines)
+            )
+
+        return (
+            {
+                "items": result["items"],
+                "pagination": result["pagination"],
+                "totals": result["totals"],
+                "start_date": normalized_start.isoformat(),
+                "end_date": normalized_end.isoformat(),
+            },
+            details,
         )
 
 

@@ -204,16 +204,47 @@ class ProposedToolCall(BaseModel):
         "update_goal",
         "create_goal",
         "activate_previous_goal",
+        "list_entries",
     ]
     entries: list[ProposedMealEntry] = Field(default_factory=list)
     entry_filters: list[ProposedEntryFilter] = Field(default_factory=list)
     goal_update: ProposedGoalUpdate | None = None
     goal_selector: Literal["active", "previous", "latest"] | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    meal_type: Literal[
+        "breakfast",
+        "lunch",
+        "dinner",
+        "snacks",
+    ] | None = None
+    detailed: bool = False
 
     @field_validator("entries", "entry_filters", mode="before")
     @classmethod
     def normalize_lists(cls, value: object) -> object:
         return [] if value is None else value
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def normalize_dates(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return None
+            if "T" in normalized:
+                return datetime.fromisoformat(
+                    normalized.replace("Z", "+00:00")
+                ).date()
+        return value
+
+    @field_validator("meal_type", mode="before")
+    @classmethod
+    def normalize_tool_meal_type(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return "snacks" if normalized == "snack" else normalized
+        return value
 
 
 class ChatDecision(BaseModel):

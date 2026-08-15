@@ -45,6 +45,46 @@ class ChatService:
 
         return start, end
 
+    @staticmethod
+    def optional_date_bounds(
+        start_date: date | str | None,
+        end_date: date | str | None,
+        default_date: date,
+    ) -> tuple[datetime | None, datetime | None]:
+        if start_date is None and end_date is None:
+            start_date = default_date
+            end_date = default_date
+
+        normalized_start = (
+            date.fromisoformat(start_date)
+            if isinstance(start_date, str)
+            else start_date
+        )
+        normalized_end = (
+            date.fromisoformat(end_date)
+            if isinstance(end_date, str)
+            else end_date
+        )
+        start = (
+            datetime.combine(
+                normalized_start,
+                time.min,
+                INDIA_TIMEZONE,
+            ).astimezone(timezone.utc)
+            if normalized_start
+            else None
+        )
+        end = (
+            datetime.combine(
+                normalized_end,
+                time.max,
+                INDIA_TIMEZONE,
+            ).astimezone(timezone.utc)
+            if normalized_end
+            else None
+        )
+        return start, end
+
     async def prepare_action_sequence(
         self,
         user_id: str,
@@ -81,15 +121,10 @@ class ChatService:
                 missing_names: list[str] = []
 
                 for entry_filter in call.get("entry_filters", []):
-                    selected_start = entry_filter.get("start_date") or today
-                    selected_end = entry_filter.get("end_date") or selected_start
-                    start, end = self.date_bounds(
-                        date.fromisoformat(selected_start)
-                        if isinstance(selected_start, str)
-                        else selected_start,
-                        date.fromisoformat(selected_end)
-                        if isinstance(selected_end, str)
-                        else selected_end,
+                    start, end = self.optional_date_bounds(
+                        entry_filter.get("start_date"),
+                        entry_filter.get("end_date"),
+                        today,
                     )
                     meal_type = entry_filter.get("meal_type")
                     food_name = entry_filter.get("food_name")
@@ -248,6 +283,27 @@ class ChatService:
                     if previous_goal
                     else "skip previous goal (not found)"
                 )
+
+            elif tool == "list_entries":
+                entry_filter = next(
+                    iter(call.get("entry_filters", [])),
+                    {},
+                )
+                start_date = call.get("start_date") or entry_filter.get(
+                    "start_date"
+                )
+                end_date = call.get("end_date") or entry_filter.get("end_date")
+                meal_type = call.get("meal_type") or entry_filter.get("meal_type")
+                prepared_steps.append(
+                    {
+                        "tool": "list_entries",
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "meal_type": meal_type,
+                        "detailed": call.get("detailed", True),
+                    }
+                )
+                descriptions.append("show the requested food-log details")
 
         proposal = {
             "entries": proposed_entries,
