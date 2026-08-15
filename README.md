@@ -12,14 +12,10 @@ nutrition assistant.
 
 ## Product demo
 
-<video src="https://raw.githubusercontent.com/Koushikroyal2005/PersonalCalorieTracker/main/docs/calorie-tracker-demo.mp4" controls width="100%">
-  Your browser does not support embedded video. Use the link below to watch the demo.
-</video>
+https://github.com/user-attachments/assets/b0fed657-b81d-4dd1-be7c-e5f5ede9be65
 
-### [▶ Play the full application demo](https://raw.githubusercontent.com/Koushikroyal2005/PersonalCalorieTracker/main/docs/calorie-tracker-demo.mp4)
-
-> GitHub clients that do not render the embedded player can use the play link above or
-> download [the MP4 from the repository](./docs/calorie-tracker-demo.mp4).
+> If your GitHub client does not display the player, open or download
+> [the repository copy of the demo](./docs/calorie-tracker-demo.mp4).
 
 ## What the application delivers
 
