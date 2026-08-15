@@ -143,7 +143,13 @@ async def test_duplicate_goal_calls_merge_into_one_sequence_step(
             {"tool": "log_meal", "entries": [meal_payload("Sandwich")]},
             {
                 "tool": "create_goal",
-                "goal_update": {"daily_calorie_target": 5000},
+                "goal_update": {
+                    "goal_type": None,
+                    "daily_calorie_target": 5000,
+                    "daily_protein_target_g": None,
+                    "daily_carbs_target_g": None,
+                    "daily_fat_target_g": None,
+                },
             },
             {"tool": "log_meal", "entries": [meal_payload("Badam shake")]},
             {
@@ -160,6 +166,7 @@ async def test_duplicate_goal_calls_merge_into_one_sequence_step(
     ]
     assert proposal["goal_update"]["daily_calorie_target"] == 5000
     assert proposal["goal_update"]["daily_protein_target_g"] == 140
+    assert proposal["goal_update"]["goal_type"] == "maintain"
 
 
 @pytest.mark.asyncio

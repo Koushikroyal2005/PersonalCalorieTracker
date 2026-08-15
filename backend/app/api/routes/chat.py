@@ -136,7 +136,10 @@ async def confirm_chat_action(
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="The pending action contains invalid data",
+            detail=(
+                "The pending action contains invalid data. "
+                "Please send the request again."
+            ),
         ) from error
 
 

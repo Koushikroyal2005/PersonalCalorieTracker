@@ -64,7 +64,13 @@ class ChatService:
         if has_create_goal:
             for call in tool_calls:
                 if call.get("tool") in {"create_goal", "update_goal"}:
-                    create_goal_updates.update(call.get("goal_update") or {})
+                    create_goal_updates.update(
+                        {
+                            key: value
+                            for key, value in (call.get("goal_update") or {}).items()
+                            if value is not None
+                        }
+                    )
         create_goal_prepared = False
 
         for call in tool_calls:
@@ -351,7 +357,7 @@ class ChatService:
         }:
             if decision.action == "action_sequence":
                 tool_calls = [
-                    call.model_dump(mode="json")
+                    call.model_dump(mode="json", exclude_none=True)
                     for call in decision.tool_call_sequence
                 ]
             elif decision.action == "delete_entries":

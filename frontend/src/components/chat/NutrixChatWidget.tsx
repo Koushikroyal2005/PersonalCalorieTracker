@@ -139,6 +139,9 @@ export function NutrixChatWidget() {
   const [sending, setSending] = useState(false);
   const [analyzingFile, setAnalyzingFile] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [failedActions, setFailedActions] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -304,6 +307,7 @@ export function NutrixChatWidget() {
     setConversationId(null);
     setMessages([]);
     setError(null);
+    setFailedActions(new Set());
     setHistoryOpen(false);
   }
 
@@ -417,6 +421,7 @@ export function NutrixChatWidget() {
       setMessages((current) => [...current, result.assistant_message]);
       if (confirm) await queryClient.invalidateQueries();
     } catch (requestError) {
+      setFailedActions((current) => new Set(current).add(actionId));
       setError(getApiErrorMessage(requestError));
     } finally {
       setActionBusy(null);
@@ -665,7 +670,8 @@ export function NutrixChatWidget() {
                 const canResolve =
                   message.message_type === "action_preview" &&
                   message.action_id &&
-                  !resolvedActions.has(message.action_id);
+                  !resolvedActions.has(message.action_id) &&
+                  !failedActions.has(message.action_id);
 
                 return (
                   <article key={message.id} className={`nutrix-message is-${message.role}`}>

@@ -73,9 +73,37 @@ class ChatHistoryService:
         )
         documents = await cursor.to_list(length=limit)
         total_pages = ceil(total / limit) if total else 0
+        items = [self.serialize(item) for item in documents]
+
+        action_ids = [
+            ObjectId(item["action_id"])
+            for item in items
+            if item.get("action_id") and ObjectId.is_valid(item["action_id"])
+        ]
+        if action_ids:
+            action_documents = await mongodb.database["chat_actions"].find(
+                {
+                    "_id": {"$in": action_ids},
+                    "user_id": user_id,
+                },
+                {"status": 1},
+            ).to_list(length=len(action_ids))
+            action_statuses = {
+                str(action["_id"]): action["status"]
+                for action in action_documents
+            }
+            for item in items:
+                action_status = action_statuses.get(item.get("action_id"))
+                if action_status:
+                    item["metadata"] = {
+                        **item.get("metadata", {}),
+                        "action_status": action_status,
+                    }
+                if action_status in {"failed", "processing"}:
+                    item["message_type"] = ChatMessageType.ERROR.value
 
         return {
-            "items": [self.serialize(item) for item in documents],
+            "items": items,
             "pagination": {
                 "page": page,
                 "limit": limit,
