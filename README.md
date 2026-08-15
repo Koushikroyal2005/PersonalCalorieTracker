@@ -374,6 +374,7 @@ MONGODB_DATABASE=personal_calorie_tracker
 JWT_SECRET_KEY=replace-with-a-long-random-secret
 GEMINI_API_KEY=your-google-ai-studio-key
 FRONTEND_URL=http://localhost:5173
+LOG_LEVEL=INFO
 ```
 
 If the MongoDB password contains reserved URL characters, URL-encode them. For example,
@@ -398,6 +399,15 @@ npm.cmd run dev
 ```
 
 Open `http://localhost:5173`.
+
+## Backend diagnostics
+
+The API logs startup mode, MongoDB connection status, validation failures, handled HTTP
+errors, and unexpected exceptions. Uvicorn continues to provide its normal access log.
+No tokens, passwords, API keys, request bodies, or MongoDB connection strings are logged.
+
+Keep `LOG_LEVEL=INFO` for normal development. Temporarily set `LOG_LEVEL=DEBUG` in
+`backend/.env` when diagnosing a cloned installation, then restart Uvicorn.
 
 ## API overview
 

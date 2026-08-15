@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -14,16 +15,28 @@ from app.api.routes.pdf_import import router as pdf_import_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.upload import router as upload_router
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.infrastructure.database import mongodb
 
 settings = get_settings()
+configure_logging(settings.log_level)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    logger.info(
+        "Starting %s in %s mode",
+        settings.app_name,
+        settings.app_env,
+    )
     await mongodb.connect()
-    yield
-    await mongodb.disconnect()
+    logger.info("API startup complete; documentation is available at /docs")
+    try:
+        yield
+    finally:
+        logger.info("Shutting down API")
+        await mongodb.disconnect()
 
 
 app = FastAPI(

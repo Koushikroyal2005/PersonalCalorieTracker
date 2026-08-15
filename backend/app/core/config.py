@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_name: str = "Personal Calorie Tracker API"
     app_env: Literal["development", "testing", "production"] = "development"
     api_prefix: str = "/api"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     mongodb_url: str
     mongodb_database: str = "personal_calorie_tracker"

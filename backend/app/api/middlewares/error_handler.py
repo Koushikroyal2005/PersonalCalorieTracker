@@ -35,13 +35,23 @@ def error_response(
 
 
 async def handle_http_exception(
-    _: Request,
+    request: Request,
     exception: StarletteHTTPException,
 ) -> JSONResponse:
     message = (
         exception.detail
         if isinstance(exception.detail, str)
         else "Request failed"
+    )
+
+    log_method = logger.error if exception.status_code >= 500 else logger.warning
+    log_method(
+        "%s %s returned %s: %s",
+        request.method,
+        request.url.path,
+        exception.status_code,
+        message,
+        exc_info=exception.__cause__,
     )
 
     return error_response(
@@ -53,9 +63,16 @@ async def handle_http_exception(
 
 
 async def handle_validation_exception(
-    _: Request,
+    request: Request,
     exception: RequestValidationError,
 ) -> JSONResponse:
+    logger.warning(
+        "%s %s failed validation (%s error(s))",
+        request.method,
+        request.url.path,
+        len(exception.errors()),
+    )
+
     return error_response(
         status_code=422,
         code="VALIDATION_ERROR",
@@ -65,10 +82,15 @@ async def handle_validation_exception(
 
 
 async def handle_database_exception(
-    _: Request,
+    request: Request,
     exception: PyMongoError,
 ) -> JSONResponse:
-    logger.exception("Database operation failed", exc_info=exception)
+    logger.exception(
+        "Database operation failed during %s %s",
+        request.method,
+        request.url.path,
+        exc_info=exception,
+    )
 
     return error_response(
         status_code=503,
@@ -78,10 +100,15 @@ async def handle_database_exception(
 
 
 async def handle_unexpected_exception(
-    _: Request,
+    request: Request,
     exception: Exception,
 ) -> JSONResponse:
-    logger.exception("Unexpected application error", exc_info=exception)
+    logger.exception(
+        "Unexpected application error during %s %s",
+        request.method,
+        request.url.path,
+        exc_info=exception,
+    )
 
     return error_response(
         status_code=500,

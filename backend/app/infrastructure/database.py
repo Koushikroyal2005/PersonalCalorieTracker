@@ -1,7 +1,11 @@
+import logging
+
 from pymongo import ASCENDING, DESCENDING, AsyncMongoClient, IndexModel
 from pymongo.server_api import ServerApi
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class MongoDatabase:
@@ -11,16 +15,33 @@ class MongoDatabase:
 
     async def connect(self) -> None:
         settings = get_settings()
-
-        self.client = AsyncMongoClient(
-            settings.mongodb_url,
-            server_api=ServerApi("1"),
-            serverSelectionTimeoutMS=5000,
+        logger.info(
+            "Connecting to MongoDB database '%s'",
+            settings.mongodb_database,
         )
 
-        await self.client.admin.command("ping")
-        self.database = self.client[settings.mongodb_database]
-        await self._create_indexes()
+        try:
+            self.client = AsyncMongoClient(
+                settings.mongodb_url,
+                server_api=ServerApi("1"),
+                serverSelectionTimeoutMS=5000,
+            )
+
+            await self.client.admin.command("ping")
+            self.database = self.client[settings.mongodb_database]
+            await self._create_indexes()
+        except Exception:
+            logger.exception(
+                "MongoDB connection failed. Check MONGODB_URL, network "
+                "access, credentials, and database availability."
+            )
+            if self.client is not None:
+                await self.client.close()
+            self.client = None
+            self.database = None
+            raise
+
+        logger.info("MongoDB connection and indexes are ready")
 
     async def _create_indexes(self) -> None:
         if self.database is None:
@@ -112,6 +133,7 @@ class MongoDatabase:
 
         self.client = None
         self.database = None
+        logger.info("MongoDB connection closed")
 
 
 mongodb = MongoDatabase()
