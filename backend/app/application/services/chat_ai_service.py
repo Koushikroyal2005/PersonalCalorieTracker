@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -10,6 +12,7 @@ from app.core.config import get_settings
 from app.schemas.chat import ChatDecision, ProposedGoalUpdate
 
 INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
+logger = logging.getLogger(__name__)
 
 CHAT_SYSTEM_PROMPT = """
 You are NutriX AI, a nutrition assistant inside a calorie-tracking app.
@@ -184,6 +187,38 @@ Rules:
 
 class ChatAIService:
     @staticmethod
+    def history_before_repeated_request(
+        message: str,
+        history: list[dict[str, str]] | None,
+    ) -> list[dict[str, str]]:
+        items = history or []
+        normalized_message = " ".join(message.lower().split())
+
+        for index in range(len(items) - 1, -1, -1):
+            item = items[index]
+            if item.get("role") != "user":
+                continue
+            previous = " ".join(item.get("content", "").lower().split())
+            if previous == normalized_message:
+                return items[:index]
+
+        return items
+
+    @staticmethod
+    def validation_feedback(error: ValueError) -> str:
+        error_details = getattr(error, "errors", None)
+        if callable(error_details):
+            compact = [
+                {
+                    "location": ".".join(str(part) for part in item["loc"]),
+                    "message": item["msg"],
+                }
+                for item in error_details()
+            ]
+            return json.dumps(compact)
+        return str(error)
+
+    @staticmethod
     def requires_action_sequence(message: str) -> bool:
         text = message.lower()
         requests_delete = any(
@@ -312,9 +347,10 @@ class ChatAIService:
         async_client = client.aio
 
         now = datetime.now(INDIA_TIMEZONE)
+        relevant_history = self.history_before_repeated_request(message, history)
         history_lines = [
             f"{item['role']}: {item['content']}"
-            for item in (history or [])
+            for item in relevant_history
         ]
         history_text = (
             "\n".join(history_lines)
@@ -343,11 +379,12 @@ class ChatAIService:
 
         try:
             for model in models:
+                attempt_prompt = prompt
                 for attempt in range(2):
                     try:
                         response = await async_client.models.generate_content(
                             model=model,
-                            contents=prompt,
+                            contents=attempt_prompt,
                             config=types.GenerateContentConfig(
                                 automatic_function_calling=(
                                     types.AutomaticFunctionCallingConfig(
@@ -386,7 +423,22 @@ class ChatAIService:
                             return decision
                         except ValueError as error:
                             last_validation_error = error
+                            logger.warning(
+                                "Gemini chat JSON failed validation "
+                                "for model %s (attempt %s)",
+                                model,
+                                attempt + 1,
+                            )
                             if attempt == 0:
+                                attempt_prompt = (
+                                    f"{prompt}\n\n"
+                                    "Your previous JSON response did not match "
+                                    "the required schema. Correct every error "
+                                    "below and return the complete JSON object "
+                                    "again. Do not omit any requested action.\n"
+                                    f"Validation errors: "
+                                    f"{self.validation_feedback(error)}"
+                                )
                                 await asyncio.sleep(0.5)
                     except ServerError as error:
                         last_api_error = error

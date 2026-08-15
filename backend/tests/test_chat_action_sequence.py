@@ -113,6 +113,22 @@ def test_goal_enrichment_preserves_multi_action_sequence() -> None:
     ]
 
 
+def test_repeated_request_excludes_its_previous_exchange() -> None:
+    repeated = "Log one apple for breakfast"
+    history = [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi!"},
+        {"role": "user", "content": repeated},
+        {"role": "assistant", "content": "Please confirm the apple."},
+    ]
+
+    relevant = ChatAIService.history_before_repeated_request(
+        "  LOG one apple   for breakfast ",
+        history,
+    )
+    assert relevant == history[:2]
+
+
 @pytest.mark.asyncio
 async def test_duplicate_goal_calls_merge_into_one_sequence_step(
     monkeypatch,
