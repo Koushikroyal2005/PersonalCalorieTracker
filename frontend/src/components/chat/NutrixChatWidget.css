@@ -244,6 +244,11 @@
 
 .nutrix-proposal-entry,
 .nutrix-goal-proposal { margin-top: 7px; padding: 10px; border: 1px solid #dbe5ec; border-radius: 13px; background: white; box-shadow: 0 4px 12px rgb(15 23 42 / 0.06); }
+.nutrix-delete-proposal { display: flex; align-items: center; gap: 9px; margin-top: 7px; padding: 10px; border: 1px solid #fecaca; border-radius: 13px; background: #fff7f7; box-shadow: 0 4px 12px rgb(15 23 42 / 0.05); }
+.nutrix-delete-proposal > span { flex: 0 0 auto; padding: 3px 6px; border-radius: 6px; background: #fee2e2; color: #b91c1c; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.nutrix-delete-proposal div { min-width: 0; }
+.nutrix-delete-proposal strong { display: block; overflow: hidden; color: #7f1d1d; font-size: 11px; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
+.nutrix-delete-proposal small { display: block; margin-top: 1px; color: #9f1239; font-size: 9.5px; text-transform: capitalize; }
 .nutrix-proposal-entry { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; }
 .nutrix-proposal-entry div { min-width: 0; }
 .nutrix-proposal-entry strong { display: block; overflow: hidden; color: #0f172a; font-size: 11.5px; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }

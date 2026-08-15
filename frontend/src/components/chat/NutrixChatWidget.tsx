@@ -677,6 +677,19 @@ export function NutrixChatWidget() {
                       {proposal?.entries?.map((entry, index) => (
                         <EntryProposal key={`${message.id}-${index}`} entry={entry} />
                       ))}
+                      {proposal?.deletions?.map((deletion) => (
+                        <div className="nutrix-delete-proposal" key={`${message.id}-${deletion.kind}-${deletion.id}`}>
+                          <span>Delete</span>
+                          <div>
+                            <strong>{deletion.label}</strong>
+                            <small>
+                              {deletion.kind === "food_entry"
+                                ? `${deletion.meal_type ?? "meal"}${deletion.calories !== undefined ? ` · ${deletion.calories} kcal` : ""}`
+                                : `${deletion.is_active ? "Active" : "Saved"} health goal`}
+                            </small>
+                          </div>
+                        </div>
+                      ))}
                       {proposal?.goal_update && (
                         <div className="nutrix-goal-proposal">
                           {Object.entries(proposal.goal_update).map(([key, value]) => (

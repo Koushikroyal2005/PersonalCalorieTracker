@@ -163,6 +163,44 @@ class ProposedGoalUpdate(BaseModel):
         return normalized
 
 
+class ProposedEntryFilter(BaseModel):
+    food_name: str = Field(min_length=1, max_length=200)
+    meal_type: Literal[
+        "breakfast",
+        "lunch",
+        "dinner",
+        "snacks",
+    ] | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @field_validator("meal_type", mode="before")
+    @classmethod
+    def normalize_meal_type(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return "snacks" if normalized == "snack" else normalized
+        return value
+
+
+class ProposedToolCall(BaseModel):
+    tool: Literal[
+        "delete_entries",
+        "log_meal",
+        "delete_goal",
+        "update_goal",
+    ]
+    entries: list[ProposedMealEntry] = Field(default_factory=list)
+    entry_filters: list[ProposedEntryFilter] = Field(default_factory=list)
+    goal_update: ProposedGoalUpdate | None = None
+    goal_selector: Literal["active", "previous", "latest"] | None = None
+
+    @field_validator("entries", "entry_filters", mode="before")
+    @classmethod
+    def normalize_lists(cls, value: object) -> object:
+        return [] if value is None else value
+
+
 class ChatDecision(BaseModel):
     action: Literal[
         "general_question",
@@ -174,11 +212,17 @@ class ChatDecision(BaseModel):
         "create_goal",
         "update_goal",
         "activate_previous_goal",
+        "delete_entries",
+        "delete_goal",
+        "action_sequence",
         "unknown",
     ]
     response_text: str
     entries: list[ProposedMealEntry] = Field(default_factory=list)
     goal_update: ProposedGoalUpdate | None = None
+    entry_filters: list[ProposedEntryFilter] = Field(default_factory=list)
+    goal_selector: Literal["active", "previous", "latest"] | None = None
+    tool_call_sequence: list[ProposedToolCall] = Field(default_factory=list)
     start_date: date | None = None
     end_date: date | None = None
     meal_type: Literal[
@@ -192,6 +236,11 @@ class ChatDecision(BaseModel):
     @field_validator("entries", mode="before")
     @classmethod
     def normalize_entries(cls, value: object) -> object:
+        return [] if value is None else value
+
+    @field_validator("entry_filters", "tool_call_sequence", mode="before")
+    @classmethod
+    def normalize_action_lists(cls, value: object) -> object:
         return [] if value is None else value
 
     @field_validator("start_date", "end_date", mode="before")

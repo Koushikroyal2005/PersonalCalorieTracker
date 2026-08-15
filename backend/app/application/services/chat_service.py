@@ -45,6 +45,146 @@ class ChatService:
 
         return start, end
 
+    async def prepare_action_sequence(
+        self,
+        user_id: str,
+        tool_calls: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], dict[str, Any], str]:
+        today = datetime.now(INDIA_TIMEZONE).date()
+        prepared_steps: list[dict[str, Any]] = []
+        proposed_entries: list[dict[str, Any]] = []
+        proposed_deletions: list[dict[str, Any]] = []
+        proposed_goal_update: dict[str, Any] = {}
+        descriptions: list[str] = []
+
+        for call in tool_calls:
+            tool = call.get("tool")
+
+            if tool == "delete_entries":
+                matched_by_id: dict[str, dict[str, Any]] = {}
+                missing_names: list[str] = []
+
+                for entry_filter in call.get("entry_filters", []):
+                    selected_start = entry_filter.get("start_date") or today
+                    selected_end = entry_filter.get("end_date") or selected_start
+                    start, end = self.date_bounds(
+                        date.fromisoformat(selected_start)
+                        if isinstance(selected_start, str)
+                        else selected_start,
+                        date.fromisoformat(selected_end)
+                        if isinstance(selected_end, str)
+                        else selected_end,
+                    )
+                    meal_type = entry_filter.get("meal_type")
+                    matches = await entry_service.list(
+                        user_id=user_id,
+                        page=1,
+                        limit=100,
+                        start_date=start,
+                        end_date=end,
+                        meal_type=MealType(meal_type) if meal_type else None,
+                        search=entry_filter["food_name"],
+                    )
+
+                    if not matches["items"]:
+                        missing_names.append(entry_filter["food_name"])
+                    for item in matches["items"]:
+                        matched_by_id[item["id"]] = item
+
+                matched_entries = list(matched_by_id.values())
+                prepared_steps.append(
+                    {
+                        "tool": "delete_entries",
+                        "entry_ids": [item["id"] for item in matched_entries],
+                        "entries": matched_entries,
+                    }
+                )
+                proposed_deletions.extend(
+                    {
+                        "kind": "food_entry",
+                        "id": item["id"],
+                        "label": item["food_name"],
+                        "meal_type": item["meal_type"],
+                        "calories": item["calories"],
+                        "consumed_at": item["consumed_at"],
+                    }
+                    for item in matched_entries
+                )
+                description = f"delete {len(matched_entries)} matching food entries"
+                if missing_names:
+                    description += (
+                        " (no match for " + ", ".join(missing_names) + ")"
+                    )
+                descriptions.append(description)
+
+            elif tool == "log_meal":
+                entries = call.get("entries", [])
+                if entries:
+                    prepared_steps.append({"tool": "log_meal", "entries": entries})
+                    proposed_entries.extend(entries)
+                    descriptions.append(f"add {len(entries)} meal entries")
+
+            elif tool == "delete_goal":
+                goals = await goal_service.list(user_id, page=1, limit=100)
+                selector = call.get("goal_selector") or "active"
+                if selector == "active":
+                    selected_goal = next(
+                        (goal for goal in goals["items"] if goal["is_active"]),
+                        None,
+                    )
+                elif selector == "previous":
+                    selected_goal = next(
+                        (goal for goal in goals["items"] if not goal["is_active"]),
+                        None,
+                    )
+                else:
+                    selected_goal = goals["items"][0] if goals["items"] else None
+
+                prepared_steps.append(
+                    {
+                        "tool": "delete_goal",
+                        "goal_id": selected_goal["id"] if selected_goal else None,
+                        "goal": selected_goal,
+                    }
+                )
+                if selected_goal:
+                    proposed_deletions.append(
+                        {
+                            "kind": "goal",
+                            "id": selected_goal["id"],
+                            "label": f'{selected_goal["goal_type"]} weight goal',
+                            "is_active": selected_goal["is_active"],
+                        }
+                    )
+                    descriptions.append(f"delete the {selector} goal")
+                else:
+                    descriptions.append(f"skip {selector} goal (not found)")
+
+            elif tool == "update_goal":
+                goal_update = call.get("goal_update") or {}
+                if goal_update:
+                    prepared_steps.append(
+                        {"tool": "update_goal", "goal_update": goal_update}
+                    )
+                    proposed_goal_update.update(goal_update)
+                    descriptions.append("update the active goal")
+
+        proposal = {
+            "entries": proposed_entries,
+            "deletions": proposed_deletions,
+            "goal_update": proposed_goal_update or None,
+            "steps": prepared_steps,
+        }
+        numbered = "; ".join(
+            f"{index}. {description}"
+            for index, description in enumerate(descriptions, start=1)
+        )
+        response_text = (
+            f"I prepared these actions in order: {numbered}. "
+            "Please review them and confirm once to run each step sequentially."
+        )
+        return {"steps": prepared_steps}, proposal, response_text
+
     async def process(
         self,
         user_id: str,
@@ -124,6 +264,61 @@ class ChatService:
         elif decision.action == "get_goals":
             response_text, result = await self.get_goals(user_id)
             metadata["result"] = result
+
+        elif decision.action in {
+            "action_sequence",
+            "delete_entries",
+            "delete_goal",
+        }:
+            if decision.action == "action_sequence":
+                tool_calls = [
+                    call.model_dump(mode="json")
+                    for call in decision.tool_call_sequence
+                ]
+            elif decision.action == "delete_entries":
+                tool_calls = [
+                    {
+                        "tool": "delete_entries",
+                        "entry_filters": [
+                            entry_filter.model_dump(mode="json")
+                            for entry_filter in decision.entry_filters
+                        ],
+                    }
+                ]
+            else:
+                tool_calls = [
+                    {
+                        "tool": "delete_goal",
+                        "goal_selector": decision.goal_selector or "active",
+                    }
+                ]
+
+            if not tool_calls:
+                response_text = (
+                    "I could not identify the actions to perform. "
+                    "Please state each requested change explicitly."
+                )
+                message_type = ChatMessageType.ERROR
+            else:
+                payload, proposal, response_text = (
+                    await self.prepare_action_sequence(user_id, tool_calls)
+                )
+                if not payload["steps"]:
+                    response_text = (
+                        "I could not prepare any valid actions from that request."
+                    )
+                    message_type = ChatMessageType.ERROR
+                else:
+                    action_id = await chat_action_service.create(
+                        user_id,
+                        conversation_id,
+                        "action_sequence",
+                        payload,
+                    )
+                    metadata["action"] = "action_sequence"
+                    metadata["proposal"] = proposal
+                    message_type = ChatMessageType.ACTION_PREVIEW
+                    requires_confirmation = True
 
         elif decision.action == "log_meal":
             if not decision.entries:

@@ -20,7 +20,10 @@ Analyze the user's message and return one JSON object with this structure:
   "action": "general_question",
   "response_text": "A short helpful response",
   "entries": [],
+  "entry_filters": [],
   "goal_update": null,
+  "goal_selector": null,
+  "tool_call_sequence": [],
   "start_date": null,
   "end_date": null,
   "meal_type": null,
@@ -72,12 +75,76 @@ Use when the user asks to deactivate the current goal and reactivate, switch
 to, or restore their most recently used previous/older goal. This action does
 not need confirmation.
 
-10. unknown
+10. delete_entries
+Use when the user wants to delete one or more food entries. Put each requested
+food match in entry_filters with food_name, meal_type, start_date and end_date.
+Deletion always needs confirmation. If no date is given, use the current date.
+
+11. delete_goal
+Use when the user wants to delete a saved goal. Set goal_selector to active,
+previous, or latest. Deletion always needs confirmation.
+
+12. action_sequence
+Use whenever the current message requests two or more app mutations, such as
+deleting a mistaken meal and then logging replacements. Put every mutation in
+tool_call_sequence in the exact order requested. Each item must have one tool:
+delete_entries, log_meal, delete_goal, or update_goal. Include only fields used
+by that tool. The application executes one tool call at a time after one user
+confirmation. Never merge, skip, reorder, or silently replace a requested step.
+
+Example for "delete biryani, then add pizza for lunch and Maggi for dinner":
+{
+  "action": "action_sequence",
+  "response_text": "I prepared the deletion and two replacement meals.",
+  "entries": [],
+  "entry_filters": [],
+  "goal_update": null,
+  "goal_selector": null,
+  "tool_call_sequence": [
+    {
+      "tool": "delete_entries",
+      "entry_filters": [{"food_name": "biryani"}],
+      "entries": [],
+      "goal_update": null,
+      "goal_selector": null
+    },
+    {
+      "tool": "log_meal",
+      "entry_filters": [],
+      "entries": [{
+        "meal_type": "lunch",
+        "food_name": "pizza",
+        "quantity_value": 1,
+        "quantity_unit": "slice",
+        "calories": 285,
+        "protein_g": 12,
+        "carbs_g": 36,
+        "fat_g": 10,
+        "micronutrients": {},
+        "consumed_at": "2026-08-15T13:00:00+05:30",
+        "confidence": 0.7,
+        "assumptions": ["Nutrition was estimated"]
+      }],
+      "goal_update": null,
+      "goal_selector": null
+    }
+  ],
+  "start_date": null,
+  "end_date": null,
+  "meal_type": null,
+  "needs_confirmation": true
+}
+
+13. unknown
 Use when the request is unclear or unrelated.
 
 Rules:
 
 - Never claim that data was saved, updated or deleted.
+- A message containing multiple mutations must use action_sequence even when
+  the mutations affect the same resource type.
+- Deletions must never be inferred from words such as change or update. Use a
+  delete tool only when the user clearly asks to delete, remove, or undo data.
 - Write concise and friendly response_text.
 - Use snake_case micronutrient names with units, such as sodium_mg,
   potassium_mg, magnesium_mg, calcium_mg and vitamin_c_mg.
@@ -111,6 +178,30 @@ Rules:
 
 
 class ChatAIService:
+    @staticmethod
+    def requires_action_sequence(message: str) -> bool:
+        text = message.lower()
+        requests_delete = any(
+            word in text for word in ("delete", "remove", "undo")
+        )
+        requests_another_mutation = any(
+            phrase in text
+            for phrase in (
+                " add ",
+                " log ",
+                " replace ",
+                " instead ",
+                " and add ",
+                " and log ",
+            )
+        ) or bool(
+            re.search(
+                r"\band\s+.+\s+for\s+(breakfast|lunch|dinner|snacks?)\b",
+                text,
+            )
+        )
+        return requests_delete and requests_another_mutation
+
     @staticmethod
     def enrich_goal_targets(
         decision: ChatDecision,
@@ -269,7 +360,22 @@ class ChatAIService:
                             decision = ChatDecision.model_validate_json(
                                 response.text,
                             )
-                            return self.enrich_goal_targets(decision, message)
+                            decision = self.enrich_goal_targets(decision, message)
+                            if (
+                                self.requires_action_sequence(message)
+                                and decision.action != "action_sequence"
+                            ):
+                                raise ValueError(
+                                    "Gemini omitted a requested mutation sequence"
+                                )
+                            if (
+                                decision.action == "action_sequence"
+                                and not decision.tool_call_sequence
+                            ):
+                                raise ValueError(
+                                    "Gemini returned an empty mutation sequence"
+                                )
+                            return decision
                         except ValueError as error:
                             last_validation_error = error
                             if attempt == 0:

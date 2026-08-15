@@ -81,4 +81,13 @@ export interface ProposedChatEntry {
 export interface ChatProposal {
   entries?: ProposedChatEntry[];
   goal_update?: Record<string, string | number | null>;
+  deletions?: Array<{
+    kind: "food_entry" | "goal";
+    id: string;
+    label: string;
+    meal_type?: string;
+    calories?: number;
+    consumed_at?: string;
+    is_active?: boolean;
+  }>;
 }

@@ -55,6 +55,11 @@ class ChatActionExecutorService:
                     user_id,
                     action["payload"],
                 )
+            elif action["action_type"] == "action_sequence":
+                result, message = await self.confirm_action_sequence(
+                    user_id,
+                    action["payload"],
+                )
             else:
                 raise UnsupportedChatActionError
 
@@ -206,6 +211,94 @@ class ChatActionExecutorService:
         return (
             {"goal": created_goal},
             "Done! I created and activated your new health goal.",
+        )
+
+    async def confirm_action_sequence(
+        self,
+        user_id: str,
+        payload: dict[str, Any],
+    ) -> tuple[dict[str, Any], str]:
+        steps = payload.get("steps", [])
+        if not steps:
+            raise ValueError("The action sequence contains no steps")
+
+        # Validate every structured mutation before changing any stored data.
+        for step in steps:
+            if step.get("tool") == "log_meal":
+                for entry in step.get("entries", []):
+                    EntryCreate.model_validate(entry)
+            elif step.get("tool") == "update_goal":
+                GoalUpdate.model_validate(step.get("goal_update", {}))
+
+        results: list[dict[str, Any]] = []
+        summaries: list[str] = []
+
+        for step in steps:
+            tool = step.get("tool")
+
+            if tool == "delete_entries":
+                deleted_ids: list[str] = []
+                for entry_id in step.get("entry_ids", []):
+                    if await entry_service.delete(user_id, entry_id):
+                        deleted_ids.append(entry_id)
+                count = len(deleted_ids)
+                noun = "entry" if count == 1 else "entries"
+                results.append(
+                    {
+                        "tool": tool,
+                        "deleted_count": count,
+                        "entry_ids": deleted_ids,
+                    }
+                )
+                summaries.append(f"deleted {count} food {noun}")
+
+            elif tool == "log_meal":
+                entries = [
+                    EntryCreate.model_validate(entry)
+                    for entry in step.get("entries", [])
+                ]
+                entry_ids = await entry_service.bulk_create(user_id, entries)
+                count = len(entry_ids)
+                noun = "entry" if count == 1 else "entries"
+                results.append(
+                    {
+                        "tool": tool,
+                        "imported_count": count,
+                        "entry_ids": entry_ids,
+                    }
+                )
+                summaries.append(f"added {count} meal {noun}")
+
+            elif tool == "delete_goal":
+                goal_id = step.get("goal_id")
+                deleted = bool(
+                    goal_id and await goal_service.delete(user_id, goal_id)
+                )
+                results.append(
+                    {
+                        "tool": tool,
+                        "deleted": deleted,
+                        "goal_id": goal_id,
+                    }
+                )
+                summaries.append(
+                    "deleted the selected goal"
+                    if deleted
+                    else "found no selected goal to delete"
+                )
+
+            elif tool == "update_goal":
+                result, _ = await self.confirm_goal(user_id, step)
+                results.append({"tool": tool, **result})
+                summaries.append("updated the active goal")
+
+            else:
+                raise UnsupportedChatActionError
+
+        sequence_summary = ", then ".join(summaries)
+        return (
+            {"steps": results},
+            f"Done! I {sequence_summary}.",
         )
 
 
