@@ -79,6 +79,8 @@ not need confirmation.
 Use when the user wants to delete one or more food entries. Put each requested
 food match in entry_filters with food_name, meal_type, start_date and end_date.
 Deletion always needs confirmation. If no date is given, use the current date.
+When the user explicitly requests all food logs in a date range, omit food_name
+and use one filter containing only start_date/end_date and optional meal_type.
 
 11. delete_goal
 Use when the user wants to delete a saved goal. Set goal_selector to active,

@@ -63,6 +63,29 @@ def test_multitask_delete_and_replacement_requires_sequence() -> None:
     assert ChatAIService.requires_action_sequence(message)
 
 
+def test_date_range_delete_accepts_no_food_name_and_datetime_values() -> None:
+    decision = ChatDecision.model_validate(
+        {
+            "action": "delete_entries",
+            "response_text": "Review the selected logs.",
+            "entry_filters": [
+                {
+                    "start_date": "2026-08-13T00:00:00+05:30",
+                    "end_date": "2026-08-14T23:59:59+05:30",
+                }
+            ],
+            "end_date": "2026-08-14T23:59:59+05:30",
+            "needs_confirmation": True,
+        }
+    )
+
+    entry_filter = decision.entry_filters[0]
+    assert entry_filter.food_name is None
+    assert entry_filter.start_date.isoformat() == "2026-08-13"
+    assert entry_filter.end_date.isoformat() == "2026-08-14"
+    assert decision.end_date.isoformat() == "2026-08-14"
+
+
 @pytest.mark.asyncio
 async def test_action_sequence_executes_tools_in_order(monkeypatch) -> None:
     calls: list[str] = []

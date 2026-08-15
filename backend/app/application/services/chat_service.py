@@ -76,19 +76,27 @@ class ChatService:
                         else selected_end,
                     )
                     meal_type = entry_filter.get("meal_type")
-                    matches = await entry_service.list(
-                        user_id=user_id,
-                        page=1,
-                        limit=100,
-                        start_date=start,
-                        end_date=end,
-                        meal_type=MealType(meal_type) if meal_type else None,
-                        search=entry_filter["food_name"],
-                    )
+                    food_name = entry_filter.get("food_name")
+                    page = 1
+                    filter_matches: list[dict[str, Any]] = []
+                    while True:
+                        matches = await entry_service.list(
+                            user_id=user_id,
+                            page=page,
+                            limit=100,
+                            start_date=start,
+                            end_date=end,
+                            meal_type=MealType(meal_type) if meal_type else None,
+                            search=food_name,
+                        )
+                        filter_matches.extend(matches["items"])
+                        if not matches["pagination"]["has_next"]:
+                            break
+                        page += 1
 
-                    if not matches["items"]:
-                        missing_names.append(entry_filter["food_name"])
-                    for item in matches["items"]:
+                    if not filter_matches:
+                        missing_names.append(food_name or "the selected date range")
+                    for item in filter_matches:
                         matched_by_id[item["id"]] = item
 
                 matched_entries = list(matched_by_id.values())
@@ -108,7 +116,7 @@ class ChatService:
                         "calories": item["calories"],
                         "consumed_at": item["consumed_at"],
                     }
-                    for item in matched_entries
+                    for item in matched_entries[:20]
                 )
                 description = f"delete {len(matched_entries)} matching food entries"
                 if missing_names:
@@ -172,6 +180,11 @@ class ChatService:
         proposal = {
             "entries": proposed_entries,
             "deletions": proposed_deletions,
+            "deletion_count": sum(
+                len(step.get("entry_ids", []))
+                + (1 if step.get("tool") == "delete_goal" and step.get("goal_id") else 0)
+                for step in prepared_steps
+            ),
             "goal_update": proposed_goal_update or None,
             "steps": prepared_steps,
         }

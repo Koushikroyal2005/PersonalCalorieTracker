@@ -164,7 +164,7 @@ class ProposedGoalUpdate(BaseModel):
 
 
 class ProposedEntryFilter(BaseModel):
-    food_name: str = Field(min_length=1, max_length=200)
+    food_name: str | None = Field(default=None, min_length=1, max_length=200)
     meal_type: Literal[
         "breakfast",
         "lunch",
@@ -180,6 +180,19 @@ class ProposedEntryFilter(BaseModel):
         if isinstance(value, str):
             normalized = value.strip().lower()
             return "snacks" if normalized == "snack" else normalized
+        return value
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def normalize_dates(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return None
+            if "T" in normalized:
+                return datetime.fromisoformat(
+                    normalized.replace("Z", "+00:00")
+                ).date()
         return value
 
 
@@ -246,8 +259,14 @@ class ChatDecision(BaseModel):
     @field_validator("start_date", "end_date", mode="before")
     @classmethod
     def normalize_optional_dates(cls, value: object) -> object:
-        if isinstance(value, str) and not value.strip():
-            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return None
+            if "T" in normalized:
+                return datetime.fromisoformat(
+                    normalized.replace("Z", "+00:00")
+                ).date()
 
         return value
 
